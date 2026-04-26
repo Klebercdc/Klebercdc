@@ -141,6 +141,118 @@ function buildVisualPrescription(input) {
   };
 }
 
+function hasSavedProfile(input) {
+  var safeInput = asObject(input);
+  var explicitSaved = safeInput.hasSavedProfile === true;
+  var profile = asObject(safeInput.profile);
+  var persistedProfile = asObject(safeInput.savedProfile);
+
+  return explicitSaved || Object.keys(profile).length > 0 || Object.keys(persistedProfile).length > 0;
+}
+
+function mergeProfileData(input) {
+  var safeInput = asObject(input);
+  var profile = asObject(safeInput.profile);
+  var savedProfile = asObject(safeInput.savedProfile);
+  var user = asObject(safeInput.user);
+
+  return {
+    objective: String(profile.objective || savedProfile.objective || '').trim(),
+    activityLevel: String(profile.activityLevel || savedProfile.activityLevel || '').trim(),
+    weight: String(profile.weight || savedProfile.weight || user.weight || '').trim(),
+    height: String(profile.height || savedProfile.height || user.height || '').trim(),
+    age: String(profile.age || savedProfile.age || user.age || '').trim(),
+    sex: String(profile.sex || savedProfile.sex || user.sex || '').trim()
+  };
+}
+
+function buildPremiumDietFlowModel(input) {
+  var safeInput = asObject(input);
+  var dailyAdjustments = asObject(safeInput.dailyAdjustments);
+  var profileData = mergeProfileData(safeInput);
+  var profileSaved = hasSavedProfile(safeInput);
+
+  var step1 = {
+    id: 'perfil-base',
+    title: 'Perfil base',
+    required: !profileSaved,
+    autoSkipped: profileSaved,
+    fields: [
+      { key: 'objective', label: 'Objetivo', type: 'single-select', options: ['perder peso', 'manter peso', 'ganhar massa', 'definição'], value: profileData.objective },
+      { key: 'activityLevel', label: 'Nível de atividade', type: 'single-select', options: ['sedentário', 'leve', 'moderado', 'intenso'], value: profileData.activityLevel },
+      { key: 'weight', label: 'Peso', type: 'text', value: profileData.weight },
+      { key: 'height', label: 'Altura', type: 'text', value: profileData.height },
+      { key: 'age', label: 'Idade', type: 'text', value: profileData.age },
+      { key: 'sex', label: 'Sexo', type: 'single-select', options: ['masculino', 'feminino'], value: profileData.sex }
+    ]
+  };
+
+  var step2 = {
+    id: 'ajuste-dia',
+    title: 'Ajuste do dia',
+    required: true,
+    fields: [
+      { key: 'mealsPerDay', label: 'Quantas refeições por dia', type: 'single-select', options: ['3', '4', '5', '6'], value: String(dailyAdjustments.mealsPerDay || '').trim() },
+      { key: 'hungerToday', label: 'Como está sua fome hoje', type: 'single-select', options: ['baixa', 'normal', 'alta', 'fome à noite'], value: String(dailyAdjustments.hungerToday || '').trim() },
+      { key: 'trainingWindow', label: 'Quando você treina', type: 'single-select', options: ['manhã', 'tarde', 'noite', 'não treinei'], value: String(dailyAdjustments.trainingWindow || '').trim() },
+      {
+        key: 'quickPreferences',
+        label: 'Preferências rápidas',
+        type: 'multi-select',
+        options: ['econômica', 'flexível', 'alta proteína', 'marmita', 'sem lactose', 'menos carbo', 'mais saudável', 'mais opções'],
+        value: Array.isArray(dailyAdjustments.quickPreferences) ? dailyAdjustments.quickPreferences : []
+      }
+    ]
+  };
+
+  var summaryChoices = {
+    objective: step1.fields[0].value,
+    activityLevel: step1.fields[1].value,
+    weight: step1.fields[2].value,
+    height: step1.fields[3].value,
+    age: step1.fields[4].value,
+    sex: step1.fields[5].value,
+    mealsPerDay: step2.fields[0].value,
+    hungerToday: step2.fields[1].value,
+    trainingWindow: step2.fields[2].value,
+    quickPreferences: step2.fields[3].value
+  };
+
+  return {
+    flowKey: 'premium-ai-diet-flow',
+    title: 'Gerar dieta com IA',
+    theme: {
+      mode: 'dark-premium',
+      cardRadius: 22,
+      cardBorderColor: '#3EE16C',
+      cardBorderWidth: 1,
+      glow: 'moderate-green'
+    },
+    preserveBottomMenu: true,
+    progress: {
+      totalSteps: 4,
+      currentStepKey: 'perfil-base',
+      steps: [
+        { key: 'perfil-base', label: 'Perfil base', order: 1, completed: profileSaved },
+        { key: 'ajuste-dia', label: 'Ajuste do dia', order: 2, completed: false },
+        { key: 'resumo', label: 'Resumo', order: 3, completed: false },
+        { key: 'gerar-dieta', label: 'Gerar dieta', order: 4, completed: false }
+      ]
+    },
+    steps: [step1, step2],
+    summaryStep: {
+      id: 'resumo',
+      title: 'Resumo',
+      choices: summaryChoices,
+      actionLabel: 'Gerar minha dieta com IA ✨'
+    },
+    storage: {
+      strategy: safeInput.storageStrategy || 'localStorage',
+      saveOnChange: true
+    }
+  };
+}
+
 function buildDietScreenModel(input) {
   var safeInput = asObject(input);
   var plan = asObject(safeInput.plan);
@@ -285,6 +397,7 @@ module.exports = {
   getMealItems,
   itemToVisualLine,
   buildVisualPrescription,
+  buildPremiumDietFlowModel,
   buildDietScreenModel,
   buildDietPdfModel,
   resolveNumericFromAliases
