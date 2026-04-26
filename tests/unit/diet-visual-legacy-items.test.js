@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 
 const {
   buildVisualPrescription,
+  buildPremiumDietFlowModel,
   buildDietScreenModel,
   buildDietPdfModel,
   resolveNumericFromAliases
@@ -141,4 +142,63 @@ test('mapeamento de macros do PDF não retorna "-" quando existem aliases válid
   assert.equal(resolveNumericFromAliases({ gorduras: 10 }, ['fat', 'gorduras', 'gordura', 'gord']), 10);
   assert.equal(resolveNumericFromAliases({ gordura: 11 }, ['fat', 'gorduras', 'gordura', 'gord']), 11);
   assert.equal(resolveNumericFromAliases({ gord: 12 }, ['fat', 'gorduras', 'gordura', 'gord']), 12);
+});
+
+test('novo fluxo premium de dieta possui 4 etapas, visual dark e preserva menu inferior', () => {
+  const flow = buildPremiumDietFlowModel({});
+
+  assert.equal(flow.title, 'Gerar dieta com IA');
+  assert.equal(flow.theme.mode, 'dark-premium');
+  assert.equal(flow.theme.glow, 'moderate-green');
+  assert.equal(flow.preserveBottomMenu, true);
+  assert.equal(flow.progress.totalSteps, 4);
+  assert.deepEqual(flow.progress.steps.map((step) => step.label), [
+    'Perfil base',
+    'Ajuste do dia',
+    'Resumo',
+    'Gerar dieta'
+  ]);
+});
+
+test('novo fluxo pula etapa 1 quando usuário já possui perfil salvo', () => {
+  const flow = buildPremiumDietFlowModel({
+    hasSavedProfile: true,
+    savedProfile: {
+      objective: 'manter peso',
+      activityLevel: 'moderado',
+      weight: '70 kg',
+      height: '1,75 m',
+      age: '28',
+      sex: 'masculino'
+    }
+  });
+
+  assert.equal(flow.steps[0].autoSkipped, true);
+  assert.equal(flow.steps[0].required, false);
+  assert.equal(flow.steps[0].fields[0].value, 'manter peso');
+  assert.equal(flow.steps[0].fields[1].value, 'moderado');
+});
+
+test('novo fluxo substitui perguntas legadas e mantém seleção de refeições no ajuste do dia', () => {
+  const flow = buildPremiumDietFlowModel({
+    dailyAdjustments: {
+      mealsPerDay: 4,
+      hungerToday: 'normal',
+      trainingWindow: 'tarde',
+      quickPreferences: ['flexível', 'alta proteína']
+    }
+  });
+
+  const step2 = flow.steps[1];
+  const mealsField = step2.fields.find((field) => field.key === 'mealsPerDay');
+
+  assert.equal(mealsField.label, 'Quantas refeições por dia');
+  assert.deepEqual(mealsField.options, ['3', '4', '5', '6']);
+  assert.equal(mealsField.value, '4');
+
+  const asText = JSON.stringify(flow);
+  assert.equal(asText.includes('Quantas refeições você prefere por dia?'), false);
+  assert.equal(asText.includes('prompt('), false);
+  assert.equal(asText.includes('alert('), false);
+  assert.equal(asText.includes('confirm('), false);
 });
